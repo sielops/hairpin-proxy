@@ -16,11 +16,34 @@ class HairpinProxyController
   # (We search both for maximum compatibility.)
   INGRESS_API_VERSIONS = ["extensions/v1beta1", "networking.k8s.io/v1"].freeze
 
+  # SIEL
+  EXTRA_HOSTS_CM_NAME = ENV['HAIRPIN_EXTRA_HOSTS_CONFIGMAP'] || 'hairpin-proxy-extra-hosts'
+  EXTRA_HOSTS_CM_NS   = ENV['HAIRPIN_EXTRA_HOSTS_NAMESPACE'] || 'hairpin-proxy'
+  HOSTNAME_RE         = /\A[A-Za-z0-9.\-_]+\z/
+  # EOF SIEL
+
   def initialize
     @k8s = K8s::Client.in_cluster_config
 
     STDOUT.sync = true
     @log = Logger.new(STDOUT)
+  end
+
+  def extra_hosts_from_configmap
+    begin
+      cm = @k8s.api('v1').resource('configmaps', namespace: EXTRA_HOSTS_CM_NS).get(EXTRA_HOSTS_CM_NAME)
+    rescue K8s::Error::NotFound
+      @log.info("No extra hosts configmap #{EXTRA_HOSTS_CM_NS}/#{EXTRA_HOSTS_CM_NAME} found")
+      return []
+    end
+  
+    data = cm.data || {}
+    raw  = data['hosts'].to_s
+    hosts = raw.each_line.map(&:strip)
+                .reject { |line| line.empty? || line.start_with?('#') }
+                .select { |h| HOSTNAME_RE.match?(h) }
+  
+    hosts.uniq
   end
 
   def fetch_ingress_hosts
@@ -36,6 +59,7 @@ class HairpinProxyController
     all_tls_blocks = all_ingresses.map { |r| r.spec.tls }.flatten.compact
     hosts = all_tls_blocks.map(&:hosts).flatten.compact
     hosts.filter! { |host| /\A[A-Za-z0-9.\-_]+\z/.match?(host) }
+    hosts |= extra_hosts_from_configmap
     hosts.sort.uniq
   end
 
@@ -60,7 +84,7 @@ class HairpinProxyController
   def check_and_rewrite_coredns
     @log.info("Polling all Ingress resources and CoreDNS configuration...")
     hosts = fetch_ingress_hosts
-    cm = @k8s.api.resource("configmaps", namespace: "kube-system").get("coredns")
+    cm = @k8s.api.resource("configmaps", namespace: "kube-system").get("rke2-coredns-rke2-coredns")
 
     old_corefile = cm.data.Corefile
     new_corefile = coredns_corefile_with_rewrite_rules(old_corefile, hosts)

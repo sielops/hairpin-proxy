@@ -160,3 +160,42 @@ spec:
             limits:
               memory: "100Mi"
               cpu: "50m"
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hairpin-proxy-extra-hosts
+  namespace: hairpin-proxy
+data:
+  hosts: |
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hairpin-extra-hosts-reader
+  namespace: hairpin-proxy
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["hairpin-proxy-extra-hosts"]
+  verbs: ["get"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hairpin-extra-hosts-reader-binding
+  namespace: hairpin-proxy
+subjects:
+- kind: ServiceAccount
+  name: hairpin-proxy-controller-sa
+  namespace: hairpin-proxy
+roleRef:
+  kind: Role
+  name: hairpin-extra-hosts-reader
+  apiGroup: rbac.authorization.k8s.io
