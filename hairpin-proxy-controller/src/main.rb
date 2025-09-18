@@ -33,9 +33,10 @@ class HairpinProxyController
         []
       end
     }.flatten
-    all_tls_blocks = all_ingresses.map { |r| r.spec.tls }.flatten.compact
-    hosts = all_tls_blocks.map(&:hosts).flatten.compact
+    all_rule_blocks = all_ingresses.map { |r| r.spec.rules }.flatten.compact
+    hosts = all_rule_blocks.map(&:host).flatten.compact
     hosts.filter! { |host| /\A[A-Za-z0-9.\-_]+\z/.match?(host) }
+    hosts |= extra_hosts_from_configmap
     hosts.sort.uniq
   end
 
